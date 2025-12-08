@@ -1,0 +1,41 @@
+name: ULTIMATE DRIFTZERO CTO AUDITOR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip phases
+        run: |
+          mkdir codebase
+          for zip in phase-*.zip; do
+            unzip -o "$zip" -d codebase
+          done
+          find codebase -type f | wc -l > file_count.txt
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Install tools
+        run: pip install pytest coverage mypy black bandit
+
+      - name: Run audit
+        run: |
+          cd codebase
+          find . -type f -exec sha256sum {} \; | sort > ../manifest.txt
+          python -c "import ast, json, os; r = [{'file': f, 'classes': [n.name for n in ast.walk(ast.parse(open(f).read())) if isinstance(n, ast.ClassDef)]} for f in [f for f in os.listdir('.') if f.endswith('.py')]]; json.dump(r, open('../fingerprints.json', 'w'), indent=2)"
+          pytest --cov=. --cov-report=xml || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audit-results
+          path: |
+            manifest.txt
+            fingerprints.json
+            file_count.txt
+            coverage.xml
