@@ -1,0 +1,50 @@
+name: PHASE X — REAL AUDIT ARTIFACT
+
+on: workflow_dispatch
+
+jobs:
+  phase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        run: sudo apt-get update && sudo apt-get install -y python3
+
+      - name: Extract only this phase
+        run: |
+          mkdir thisphase
+          unzip -o phase-X.zip -d thisphase   # ← change X each time (1, 2a, 2b, 4, 5, 6, 8)
+          find thisphase -mindepth 2 -type f -exec mv -t thisphase {} +
+
+      - name: Generate real proof
+        run: |
+          cd thisphase
+          find . -type f -exec sha256sum {} \; | sort > ../manifest.txt
+          find . -type f | sort > ../filelist.txt
+
+      - name: Real fingerprints (classes/functions)
+        run: |
+          cd thisphase
+          python3 -c "
+import ast, json, os
+from pathlib import Path
+result = []
+for p in Path('.').rglob('*.py'):
+    try:
+        tree = ast.parse(p.read_text())
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        funcs = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+        result.append({'file': str(p), 'classes': classes, 'functions': funcs})
+    except Exception as e:
+        result.append({'file': str(p), 'error': str(e)})
+with open('../fingerprints.json', 'w') as f:
+    json.dump(result, f, indent=2)
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PHASE-X-REAL
+          path: |
+            manifest.txt
+            filelist.txt
+            fingerprints.json
