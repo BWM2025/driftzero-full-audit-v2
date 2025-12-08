@@ -2,7 +2,7 @@ name: PHASE 1 — FORENSIC PROOF
 
 on:
   workflow_dispatch
-  pull_request:   # ← this line is the magic trick (we remove it in 3 minutes)
+  push:  # Temporary: Forces successful run on commit to activate UI
 
 jobs:
   proof:
@@ -17,24 +17,24 @@ jobs:
         run: |
           unzip -o phase-1.zip
 
-      - name: Generate the three files
+      - name: Generate manifest, filelist and fingerprints
         run: |
           find . -type f -not -path '*/\.git/*' -exec sha256sum {} \; | sort > manifest.txt
           find . -type f -not -path '*/\.git/*' | sort > filelist.txt
           python3 - <<'PY'
-import ast, json
-from pathlib import Path
-result = []
-for p in Path('.').rglob('*.py'):
-    try:
-        tree = ast.parse(p.read_text())
-        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
-        funcs   = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
-        result.append({"file": str(p), "classes": classes, "functions": funcs})
-    except:
-        result.append({"file": str(p), "error": "parse failed"})
-json.dump(result, open('fingerprints.json', 'w'), indent=2)
-PY
+          import ast, json, os
+          from pathlib import Path
+          result = []
+          for p in Path('.').rglob('*.py'):
+              try:
+                  tree = ast.parse(p.read_text())
+                  classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+                  funcs   = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+                  result.append({"file": str(p), "classes": classes, "functions": funcs})
+              except:
+                  result.append({"file": str(p), "error": "parse failed"})
+          json.dump(result, open('fingerprints.json','w'), indent=2)
+          PY
 
       - name: Upload proof
         uses: actions/upload-artifact@v4
@@ -42,4 +42,5 @@ PY
           name: PHASE1-REAL
           path: |
             manifest.txt
-            filelist.txt  fingerprints.json
+            filelist.txt
+            fingerprints.json
