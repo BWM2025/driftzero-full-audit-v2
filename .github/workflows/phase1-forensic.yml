@@ -1,0 +1,62 @@
+name: PHASE 1 — FORENSIC PROOF
+
+on: workflow_dispatch
+
+jobs:
+  generate-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y unzip python3
+
+      - name: Extract & flatten phase-1.zip
+        run: |
+          mkdir phase1
+          unzip -o phase-1.zip -d phase1 || echo "ZIP handled"
+          find phase1 -mindepth 2 -type f -exec mv {} phase1/ \; -delete || true
+
+      - name: Generate SHA-256 manifest
+        run: |
+          cd phase1
+          find . -type f -exec sha256sum {} \; | sort > ../manifest.txt
+
+      - name: Generate file list
+        run: |
+          cd phase1
+          find . -type f | sort > ../filelist.txt
+          echo "Total files: $(wc -l < ../filelist.txt)" >> ../filelist.txt
+
+      - name: Generate AST fingerprints
+        run: |
+          cd phase1
+          python3 - << 'EOF'
+import ast
+import json
+from pathlib import Path
+result = []
+for p in Path('.').rglob('*.py'):
+    try:
+        tree = ast.parse(p.read_text())
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        funcs = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+        result.append({"file": str(p), "classes": classes, "functions": funcs})
+    except Exception as e:
+        result.append({"file": str(p), "error": str(e)})
+with open('../fingerprints.json', 'w') as f:
+    json.dump(result, f, indent=2)
+EOF
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PHASE1-REAL
+          path: |
+            manifest.txt
+            filelist.txt
+            fingerprints.json
+          retention-days: 30
