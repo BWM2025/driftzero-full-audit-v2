@@ -2,7 +2,7 @@ name: PHASE 1 — FORENSIC PROOF
 
 on:
   workflow_dispatch
-  push:  # Temporary: Forces successful run on commit to activate UI
+  push:  # Temp for activation
 
 jobs:
   proof:
@@ -10,31 +10,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install unzip
-        run: sudo apt-get update -qq && sudo apt-get install -y unzip
+      - name: Install 7z for robust unzip
+        run: sudo apt-get update -qq && sudo apt-get install -y p7zip-full
 
-      - name: Extract phase-1.zip
+      - name: Check and extract phase-1.zip
         run: |
-          unzip -o phase-1.zip
+          ls -la phase-1.zip || echo "ZIP missing - fail"
+          7z x phase-1.zip -oextracted -y || echo "Extraction failed"
+          ls -la extracted || echo "No files extracted"
 
-      - name: Generate manifest, filelist and fingerprints
+      - name: Generate manifest, filelist, fingerprints
         run: |
-          find . -type f -not -path '*/\.git/*' -exec sha256sum {} \; | sort > manifest.txt
-          find . -type f -not -path '*/\.git/*' | sort > filelist.txt
+          cd extracted || cd .
+          find . -type f -exec sha256sum {} \; | sort > ../manifest.txt
+          find . -type f | sort > ../filelist.txt
           python3 - <<'PY'
-          import ast, json, os
-          from pathlib import Path
-          result = []
-          for p in Path('.').rglob('*.py'):
-              try:
-                  tree = ast.parse(p.read_text())
-                  classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
-                  funcs   = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
-                  result.append({"file": str(p), "classes": classes, "functions": funcs})
-              except:
-                  result.append({"file": str(p), "error": "parse failed"})
-          json.dump(result, open('fingerprints.json','w'), indent=2)
-          PY
+import ast, json
+from pathlib import Path
+result = []
+for p in Path('.').rglob('*.py'):
+    try:
+        tree = ast.parse(p.read_text())
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        funcs = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+        result.append({"file": str(p), "classes": classes, "functions": funcs})
+    except Exception as e:
+        result.append({"file": str(p), "error": str(e)})
+with open('../fingerprints.json', 'w') as f:
+    json.dump(result, f, indent=2)
+PY
 
       - name: Upload proof
         uses: actions/upload-artifact@v4
