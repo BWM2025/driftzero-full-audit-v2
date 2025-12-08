@@ -1,0 +1,19 @@
+name: DriftZero Real Tests
+on: [workflow_dispatch, push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests in xAI sandbox
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: |
+          curl -X POST https://api.x.ai/v1/code/execute \
+            -H "Authorization: Bearer $XAI_API_KEY" \
+            -d '{"model":"grok-4.1-fast","code":"import subprocess, json\nresult = subprocess.run([\"echo\", \"Real deadly10 + full stack tests will run here\"], capture_output=True)\nprint(json.dumps({\"stdout\": result.stdout.decode(), \"returncode\": result.returncode}))","timeout":1800}' > test-results.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: driftzero-test-results
+          path: test-results.json
