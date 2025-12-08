@@ -1,6 +1,7 @@
 name: PHASE 1 — FORENSIC PROOF
 
-on: workflow_dispatch
+on: 
+  workflow_dispatch
 
 jobs:
   generate-proof:
@@ -32,9 +33,10 @@ jobs:
           echo "Total files: $(wc -l < ../filelist.txt)" >> ../filelist.txt
 
       - name: Generate AST fingerprints
+        shell: bash
         run: |
           cd phase1
-          python3 - << 'EOF'
+          python3 - << EOF
 import ast
 import json
 from pathlib import Path
