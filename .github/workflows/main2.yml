@@ -1,0 +1,83 @@
+name: ULTIMATE DRIFTZERO CTO AUDITOR – FULL ON-GITHUB AUDIT
+
+on:
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  full-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download & unzip all phases
+        run: |
+          mkdir -p codebase
+          for zip in phase-*.zip; do
+            echo "Unzipping $zip"
+            unzip -o "$zip" -d codebase/ || echo "Warning: Skip if empty"
+          done
+          find codebase -type f | sort > file_list.txt
+          echo "Total files:" $(wc -l < file_list.txt)
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install full audit toolchain
+        run: |
+          pip install --upgrade pip
+          pip install pytest coverage mypy black bandit
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.50.1
+
+      - name: Run the complete audit suite
+        run: |
+          cd codebase || exit 1
+          # 1. File manifest + SHA-256
+          find . -type f -exec sh -c 'sha256sum "$1" | awk "{print \$1 \" \" \$2}"' _ {} \; | sort > ../driftzero_file_manifest.txt
+          echo "Manifest created: $(wc -l < ../driftzero_file_manifest.txt) entries"
+          
+          # 2. Code fingerprints (only Python files)
+          python -c "
+import ast, json, os, sys
+result = []
+for root, _, files in os.walk('.'):
+    for f in files:
+        if f.endswith('.py'):
+            path = os.path.join(root, f)
+            try:
+                with open(path, 'r') as fh:
+                    tree = ast.parse(fh.read())
+                classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+                funcs = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+                result.append({'file': path, 'classes': classes, 'functions': funcs})
+            except Exception as e:
+                print(f'Skip {path}: {e}', file=sys.stderr)
+json.dump(result, open('../driftzero_code_fingerprints.json', 'w'), indent=2)
+"
+          echo "Fingerprints created: $(jq length ../driftzero_code_fingerprints.json) files"
+          
+          # 3. Run all tests & static analysis (with || true to not fail whole job)
+          pytest --cov=. --cov-report=xml || echo "Pytest complete (some failures OK)"
+          mypy . || echo "Mypy complete"
+          black --check . || echo "Black complete"
+          bandit -r . || echo "Bandit complete"
+          trivy fs . || echo "Trivy complete"
+
+      - name: Upload all audit artifacts
+        if: always()  # Upload even on failure
+        uses: actions/upload-artifact@v4
+        with:
+          name: ULTIMATE-DRIFTZERO-CTO-AUDIT-RESULTS
+          path: |
+            driftzero_file_manifest.txt
+            driftzero_code_fingerprints.json
+            file_list.txt
+            coverage.xml
+            *.log
+            mypy_*.txt
